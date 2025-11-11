@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>X Driver</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Poppins", sans-serif;
+        background-color: #f4f4f4;
+      }
+
+      header {
+        background: #0078ff;
+        color: white;
+        text-align: center;
+        padding: 15px 0;
+        font-size: 1.4em;
+        font-weight: bold;
+      }
+
+      #container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 15px;
+      }
+
+      #map {
+        width: 100%;
+        height: 500px;
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin: 15px 0;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      input,
+      button {
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        font-size: 14px;
+      }
+
+      button {
+        background: #0078ff;
+        color: white;
+        border: none;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+
+      button:hover {
+        background: #005fcc;
+      }
+
+      ul {
+        list-style: none;
+        width: 90%;
+        max-width: 600px;
+        margin-top: 15px;
+        background: white;
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      }
+
+      li {
+        margin: 8px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      li button {
+        background: #e63946;
+      }
+
+      li button:hover {
+        background: #b71c1c;
+      }
+    </style>
+  </head>
+  <body>
+    <header>🚘 X Driver</header>
+
+    <div id="container">
+      <div class="controls">
+        <input id="nombre" placeholder="Nombre" />
+        <input id="telefono" placeholder="Teléfono" />
+        <input id="ubicacion" placeholder="Ubicación o link de Google Maps" />
+        <button id="agregar">Agregar</button>
+        <button id="iniciarRuta">Comenzar ruta</button>
+      </div>
+
+      <div id="map"></div>
+      <ul id="lista"></ul>
+    </div>
+
+    <script>
+      let map, directionsService, directionsRenderer;
+      let marcadores = [];
+      let ubicaciones = [];
+      let rutaActiva = false;
+
+      // Inicializa el mapa
+      function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+          center: { lat: -12.0464, lng: -77.0428 }, // Lima
+          zoom: 16, // 🔹 vista más cercana
+          tilt: 45,
+          mapId: "DEMO_MAP_ID",
+        });
+
+        directionsService = new google.maps.DirectionsService();
+        directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
+
+        document
+          .getElementById("agregar")
+          .addEventListener("click", agregarUbicacion);
+        document
+          .getElementById("iniciarRuta")
+          .addEventListener("click", iniciarRuta);
+      }
+
+      // 🔹 Agrega una ubicación manualmente o por link
+      function agregarUbicacion() {
+        const nombre = document.getElementById("nombre").value.trim();
+        const telefono = document.getElementById("telefono").value.trim();
+        const ubicacion = document.getElementById("ubicacion").value.trim();
+
+        if (!nombre || !telefono || !ubicacion) {
+          alert("Completa todos los campos.");
+          return;
+        }
+
+        let coordsPromise;
+
+        // Si es link de Google Maps, extraer coordenadas
+        if (ubicacion.includes("https://")) {
+          const match = ubicacion.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+          if (match) {
+            const lat = parseFloat(match[1]);
+            const lng = parseFloat(match[2]);
+            coordsPromise = Promise.resolve({ lat, lng });
+          } else {
+            alert("No se reconocieron coordenadas en el link.");
+            return;
+          }
+        } else {
+          const geocoder = new google.maps.Geocoder();
+          coordsPromise = new Promise((resolve, reject) => {
+            geocoder.geocode({ address: ubicacion }, (results, status) => {
+              if (status === "OK")
+                resolve(results[0].geometry.location.toJSON());
+              else reject(status);
+            });
+          });
+        }
+
+        coordsPromise.then((coords) => {
+          const marcador = new google.maps.Marker({
+            position: coords,
+            map,
+            title: nombre,
+          });
+
+          marcadores.push(marcador);
+          ubicaciones.push({ nombre, telefono, coords });
+
+          actualizarLista();
+          map.panTo(coords);
+        });
+      }
+
+      // 🔹 Actualiza la lista de ubicaciones
+      function actualizarLista() {
+        const lista = document.getElementById("lista");
+        lista.innerHTML = "";
+
+        ubicaciones.forEach((u, i) => {
+          const li = document.createElement("li");
+          li.innerHTML = `
+            <span><strong>${u.nombre}</strong> - ${u.telefono}</span>
+            <div>
+              <button onclick="editarUbicacion(${i})">✏️</button>
+              <button onclick="eliminarUbicacion(${i})">🗑️</button>
+            </div>
+          `;
+          lista.appendChild(li);
+        });
+      }
+
+      // 🔹 Editar ubicación
+      function editarUbicacion(i) {
+        const nuevoNombre = prompt(
+          "Nuevo nombre:",
+          ubicaciones[i].nombre
+        );
+        const nuevoTelefono = prompt(
+          "Nuevo teléfono:",
+          ubicaciones[i].telefono
+        );
+        if (nuevoNombre && nuevoTelefono) {
+          ubicaciones[i].nombre = nuevoNombre;
+          ubicaciones[i].telefono = nuevoTelefono;
+          actualizarLista();
+        }
+      }
+
+      // 🔹 Eliminar ubicación
+      function eliminarUbicacion(i) {
+        marcadores[i].setMap(null);
+        marcadores.splice(i, 1);
+        ubicaciones.splice(i, 1);
+        actualizarLista();
+      }
+
+      // 🔹 Inicia la ruta (modo conducción)
+      function iniciarRuta() {
+        if (ubicaciones.length < 2) {
+          alert("Agrega al menos dos ubicaciones para trazar la ruta.");
+          return;
+        }
+
+        const origen = ubicaciones[0].coords;
+        const destino = ubicaciones[ubicaciones.length - 1].coords;
+        const waypoints = ubicaciones
+          .slice(1, -1)
+          .map((u) => ({ location: u.coords, stopover: true }));
+
+        directionsService.route(
+          {
+            origin: origen,
+            destination: destino,
+            waypoints,
+            travelMode: "DRIVING",
+          },
+          (result, status) => {
+            if (status === "OK") {
+              directionsRenderer.setDirections(result);
+              rutaActiva = true;
+              activarModoConduccion();
+            } else {
+              alert("No se pudo generar la ruta.");
+            }
+          }
+        );
+      }
+
+      // 🔹 Cámara tipo conducción (más cercana)
+      function activarModoConduccion() {
+        if (!rutaActiva) return;
+        const paso = marcadores[0].getPosition();
+        map.setHeading(0);
+        map.setTilt(60); // 🔹 vista inclinada estilo conducción
+        map.setZoom(18); // 🔹 zoom cercano
+        map.panTo(paso);
+      }
+    </script>
+
+    <!-- Sustituye TU_API_KEY por tu clave de Google Maps -->
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDZbRuA1KlUYjFXSrmju0gemuX74GLz_E&callback=initMap"
+      async
+      defer
+    ></script>
+  </body>
+</html>
